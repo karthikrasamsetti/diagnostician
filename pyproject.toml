@@ -1,0 +1,38 @@
+[project]
+name = "diagnostician"
+version = "0.1.0"
+description = "Read-only AI agent that triages CI/CD test failures into bug / broken_test / flaky / environment_issue."
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Runtime dependencies — what the agent needs to RUN.
+# Versions are lower-bounds ("what we want"); uv.lock pins the exact resolution.
+dependencies = [
+    "pydantic>=2.7",
+    "anthropic>=0.40",
+    "openai>=1.50",
+    "python-dotenv>=1.0",
+]
+
+# Optional dev dependencies — only needed to TEST/develop, not to run.
+# Installed with:  uv sync --extra dev
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+# A convenient CLI entry point:  `uv run diagnose-eval --provider anthropic`
+[project.scripts]
+diagnose-eval = "diagnostician.evaluate:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Tell the build system where our package lives (src layout).
+[tool.hatch.build.targets.wheel]
+packages = ["src/diagnostician"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
