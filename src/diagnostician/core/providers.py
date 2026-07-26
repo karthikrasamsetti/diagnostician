@@ -1,48 +1,56 @@
 """
 providers.py
 ------------
-The provider-agnostic LLM layer. The agent talks to an ABSTRACT interface
-(LLMProvider) and never imports a vendor SDK directly. This is the Strategy
-pattern (swappable algorithm) delivered via a Factory (get_provider by name).
+The provider-agnostic LLM layer. Agents talk to an ABSTRACT interface
+(LLMProvider) and never import a vendor SDK directly. Strategy pattern (swappable
+algorithm) delivered via a Factory (get_provider by name).
 
-WHY: swap Anthropic <-> OpenAI <-> a free offline Mock by changing ONE string.
-Vendor outages, price changes, cost/quality tuning, and offline testing all
-become trivial. The agent's reasoning code stays identical.
+GENERALIZED for multiple agents: the core method is `structured(system, user,
+schema)` — it forces the model to return data matching ANY Pydantic schema and
+returns a validated instance. The Diagnostician uses it with Verdict; the Reporter
+uses it with TicketDraft; future agents use it with their own schemas.
 
-Each provider's job: take a system prompt + user message + our Pydantic schema,
-force the model to return data matching that schema, and hand back a validated
-Verdict object. HOW it forces structure differs per vendor; the agent doesn't care.
+`classify()` is kept as a thin backward-compatible wrapper (Verdict-specific) so
+existing Diagnostician code and tests keep working unchanged.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from abc import ABC, abstractmethod
+from typing import Type, TypeVar
+
+from pydantic import BaseModel
 
 from diagnostician.core.schema import Verdict
 
 logger = logging.getLogger("diagnostician.providers")
 
+T = TypeVar("T", bound=BaseModel)
+
 
 # ---------------------------------------------------------------------------
-# THE CONTRACT. Every provider MUST implement classify(). The agent depends
-# only on this abstract type — never on anthropic/openai concretely.
+# THE CONTRACT. Every provider implements structured() for ANY schema.
+# classify() is a Verdict-specific convenience built on top of it.
 # ---------------------------------------------------------------------------
 class LLMProvider(ABC):
     name: str = "abstract"
 
     @abstractmethod
-    def classify(self, system_prompt: str, user_message: str) -> Verdict:
-        """Return a schema-valid Verdict for the given prompts. Raises on failure."""
+    def structured(self, system_prompt: str, user_message: str,
+                   schema: Type[T]) -> T:
+        """Return a schema-valid instance of `schema`. Raises on failure."""
         raise NotImplementedError
+
+    def classify(self, system_prompt: str, user_message: str) -> Verdict:
+        """Backward-compatible convenience: structured output as a Verdict."""
+        return self.structured(system_prompt, user_message, Verdict)
 
 
 # ---------------------------------------------------------------------------
-# ANTHROPIC. Uses tool-calling to FORCE structured output: we hand Claude the
-# Verdict schema as a tool, and require it to "call" that tool — the arguments
-# it produces are guaranteed to match our schema shape.
+# ANTHROPIC. Tool-calling forces structured output: hand Claude the schema as a
+# tool and require it to "call" it, so the arguments match the schema.
 # ---------------------------------------------------------------------------
 class AnthropicProvider(LLMProvider):
     name = "anthropic"
@@ -53,30 +61,31 @@ class AnthropicProvider(LLMProvider):
         self._model = model
         self._temperature = temperature     # 0.0 -> consistency, not creativity
 
-    def classify(self, system_prompt: str, user_message: str) -> Verdict:
+    def structured(self, system_prompt: str, user_message: str,
+                   schema: Type[T]) -> T:
         tool = {
-            "name": "submit_verdict",
-            "description": "Submit the final triage verdict.",
-            "input_schema": Verdict.model_json_schema(),  # Pydantic -> JSON Schema
+            "name": "submit",
+            "description": f"Submit the result as a {schema.__name__}.",
+            "input_schema": schema.model_json_schema(),
         }
         resp = self._client.messages.create(
             model=self._model,
-            max_tokens=1024,
+            max_tokens=2048,
             temperature=self._temperature,
             system=system_prompt,
             tools=[tool],
-            tool_choice={"type": "tool", "name": "submit_verdict"},  # MUST use the tool
+            tool_choice={"type": "tool", "name": "submit"},
             messages=[{"role": "user", "content": user_message}],
         )
         for block in resp.content:
             if block.type == "tool_use":
-                return Verdict.model_validate(block.input)  # schema bouncer runs here
+                return schema.model_validate(block.input)  # schema bouncer runs here
         raise ValueError("Anthropic returned no tool_use block")
 
 
 # ---------------------------------------------------------------------------
-# OPENAI. Uses its native structured-output feature (response_format) which
-# accepts a Pydantic model directly and guarantees a matching parsed object.
+# OPENAI. Native structured-output feature (response_format) accepts a Pydantic
+# model directly and guarantees a matching parsed object.
 # ---------------------------------------------------------------------------
 class OpenAIProvider(LLMProvider):
     name = "openai"
@@ -87,7 +96,8 @@ class OpenAIProvider(LLMProvider):
         self._model = model
         self._temperature = temperature
 
-    def classify(self, system_prompt: str, user_message: str) -> Verdict:
+    def structured(self, system_prompt: str, user_message: str,
+                   schema: Type[T]) -> T:
         completion = self._client.beta.chat.completions.parse(
             model=self._model,
             temperature=self._temperature,
@@ -95,7 +105,7 @@ class OpenAIProvider(LLMProvider):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            response_format=Verdict,        # OpenAI enforces the schema for us
+            response_format=schema,         # OpenAI enforces the schema for us
         )
         parsed = completion.choices[0].message.parsed
         if parsed is None:
@@ -104,14 +114,14 @@ class OpenAIProvider(LLMProvider):
 
 
 # ---------------------------------------------------------------------------
-# MOCK. No network, no key, no cost. Returns a canned Verdict (or one you inject).
-# This is what lets us build and TEST the whole pipeline offline & deterministically.
-# Notice: the agent can't tell this apart from a real provider — that's the point.
+# MOCK. No network, no key, no cost. Returns a canned object per schema so the
+# whole pipeline is testable offline & deterministically.
 # ---------------------------------------------------------------------------
 class MockProvider(LLMProvider):
     name = "mock"
 
-    def __init__(self, canned: Verdict | None = None):
+    def __init__(self, canned: BaseModel | None = None):
+        # Default canned Verdict (keeps existing Diagnostician tests working).
         self._canned = canned or Verdict(
             label="flaky",
             confidence=0.5,
@@ -119,14 +129,46 @@ class MockProvider(LLMProvider):
             recommended_action="human_review",
         )
 
-    def classify(self, system_prompt: str, user_message: str) -> Verdict:
-        logger.info("MockProvider returning canned verdict (no API call made)")
-        return self._canned
+    def structured(self, system_prompt: str, user_message: str,
+                   schema: Type[T]) -> T:
+        logger.info("MockProvider returning canned %s (no API call made)",
+                    schema.__name__)
+        # If an injected canned object matches the requested schema, return it.
+        if isinstance(self._canned, schema):
+            return self._canned
+        # Otherwise synthesize a minimal valid instance of the requested schema
+        # so mock-based tests work for ANY agent without hand-injecting one.
+        return _minimal_instance(schema)
+
+
+def _minimal_instance(schema: Type[T]) -> T:
+    """Build a minimal valid instance of a Pydantic schema for offline mocking.
+    Fills required fields with schema-appropriate placeholder values."""
+    from pydantic_core import PydanticUndefined
+    values = {}
+    for name, field in schema.model_fields.items():
+        if field.default is not PydanticUndefined or field.default_factory is not None:
+            continue  # optional / has default -> let Pydantic fill it
+        ann = field.annotation
+        if ann is str:
+            values[name] = f"[mock {name}]".ljust(30, ".")
+        elif ann is float:
+            values[name] = 0.5
+        elif ann is int:
+            values[name] = 1
+        elif getattr(ann, "__origin__", None) is list:
+            values[name] = ["[mock item]"]
+        else:
+            # enum or other -> pick the first allowed value if possible
+            try:
+                values[name] = list(ann)[0]
+            except TypeError:
+                values[name] = "[mock]".ljust(30, ".")
+    return schema.model_validate(values)
 
 
 # ---------------------------------------------------------------------------
-# THE FACTORY. Give it a name, get a ready provider. This is the single place
-# that knows about concrete classes; everything else uses the abstract type.
+# THE FACTORY.
 # ---------------------------------------------------------------------------
 _REGISTRY: dict[str, type[LLMProvider]] = {
     "anthropic": AnthropicProvider,
@@ -146,10 +188,8 @@ def get_provider(name: str | None = None, **kwargs) -> LLMProvider:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    # Prove the factory + mock work with zero API keys.
     provider = get_provider("mock")
     print("Provider name:", provider.name)
     verdict = provider.classify("system", "user")
     print("Returned a valid Verdict:", verdict.model_dump())
-    # Prove it's polymorphic: the type is the abstract contract.
     print("Is an LLMProvider?", isinstance(provider, LLMProvider))

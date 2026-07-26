@@ -104,7 +104,7 @@ class TestAgent:
         # return the safe human_review fallback with confidence 0.
         class ExplodingProvider(LLMProvider):
             name = "exploding"
-            def classify(self, system_prompt, user_message):
+            def structured(self, system_prompt, user_message, schema):
                 raise RuntimeError("simulated API outage")
 
         agent = Diagnostician(provider=ExplodingProvider(),

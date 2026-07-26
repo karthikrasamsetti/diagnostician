@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Optional, TypedDict
 
 from diagnostician.core.schema import Verdict
+from diagnostician.agents.reporter.schema import TicketDraft
 
 
 class CrewState(TypedDict, total=False):
@@ -35,7 +36,8 @@ class CrewState(TypedDict, total=False):
     # --- Added by exactly ONE downstream node, depending on the verdict ---
     heal_result: Optional[str]     # Healer: proposed locator fix (broken_test)
     flake_result: Optional[str]    # FlakeHandler: quarantine/track note (flaky)
-    report_result: Optional[str]   # Reporter: drafted ticket (application_bug / env)
+    report_result: Optional[str]      # Reporter: human-readable summary line
+    ticket_draft: Optional[TicketDraft]  # Reporter: the full structured draft
     human_note: Optional[str]      # HumanReview: why it was escalated
 
     # --- Control / audit ---

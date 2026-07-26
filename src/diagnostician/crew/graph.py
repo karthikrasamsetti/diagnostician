@@ -68,13 +68,20 @@ def flake_handler_node(state: CrewState) -> dict:
     return {"flake_result": note, "route": "flake_handler", "status": "done"}
 
 
-def reporter_node(state: CrewState) -> dict:
-    v = state["verdict"]
-    cf = state["case_file"]
-    note = (f"[Reporter stub] Would draft a Jira bug for '{cf.get('test_name')}'. "
-            f"Confidence {v.confidence:.2f}. Reasoning: {v.reasoning[:80]}...")
-    logger.info("Reporter stub ran")
-    return {"report_result": note, "route": "reporter", "status": "done"}
+def make_reporter_node(provider: LLMProvider):
+    """Factory: injects the provider into the real Reporter agent."""
+    from diagnostician.agents.reporter.agent import Reporter
+    reporter = Reporter(provider=provider)
+
+    def reporter_node(state: CrewState) -> dict:
+        draft = reporter.draft(state["case_file"], state["verdict"])
+        summary = (f"Drafted ticket: '{draft.summary}' (priority={draft.priority.value}). "
+                   f"DRAFT ONLY — needs human review before filing.")
+        logger.info("Reporter drafted a ticket (priority=%s)", draft.priority.value)
+        return {"report_result": summary, "ticket_draft": draft,
+                "route": "reporter", "status": "done"}
+
+    return reporter_node
 
 
 def human_review_node(state: CrewState) -> dict:
@@ -120,7 +127,7 @@ def build_crew(provider: LLMProvider | None = None):
     graph.add_node("diagnostician", make_diagnostician_node(provider))
     graph.add_node("healer", healer_node)
     graph.add_node("flake_handler", flake_handler_node)
-    graph.add_node("reporter", reporter_node)
+    graph.add_node("reporter", make_reporter_node(provider))
     graph.add_node("human_review", human_review_node)
 
     # Edges (the wiring):
