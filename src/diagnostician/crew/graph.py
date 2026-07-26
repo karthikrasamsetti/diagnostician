@@ -61,11 +61,20 @@ def healer_node(state: CrewState) -> dict:
     return {"heal_result": note, "route": "healer", "status": "done"}
 
 
-def flake_handler_node(state: CrewState) -> dict:
-    note = ("[FlakeHandler stub] Would quarantine this test and increment its "
-            "flakiness score. No code rewrite (nothing is actually broken).")
-    logger.info("FlakeHandler stub ran")
-    return {"flake_result": note, "route": "flake_handler", "status": "done"}
+def make_flake_handler_node():
+    """Factory for the deterministic FlakeHandler node (no provider needed)."""
+    from diagnostician.agents.flake_handler.agent import FlakeHandler
+    handler = FlakeHandler()  # default threshold + store
+
+    def flake_handler_node(state: CrewState) -> dict:
+        test_name = state["case_file"].get("test_name", "<unknown>")
+        result = handler.handle(test_name)
+        logger.info("FlakeHandler: %s (count=%d)", result.action, result.flake_count)
+        return {"flake_result": result.message,
+                "route": "flake_handler",
+                "status": "quarantined" if result.quarantined else "done"}
+
+    return flake_handler_node
 
 
 def make_reporter_node(provider: LLMProvider):
@@ -126,7 +135,7 @@ def build_crew(provider: LLMProvider | None = None):
     # Register nodes (name -> function).
     graph.add_node("diagnostician", make_diagnostician_node(provider))
     graph.add_node("healer", healer_node)
-    graph.add_node("flake_handler", flake_handler_node)
+    graph.add_node("flake_handler", make_flake_handler_node())
     graph.add_node("reporter", make_reporter_node(provider))
     graph.add_node("human_review", human_review_node)
 

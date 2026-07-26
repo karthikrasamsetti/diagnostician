@@ -183,3 +183,47 @@ class TestFixtures:
     def test_ids_are_unique(self):
         ids = [f.id for f in FIXTURES]
         assert len(ids) == len(set(ids))
+
+
+# ---------------------------------------------------------------------------
+# FLAKE HANDLER — deterministic, so we assert EXACT behavior (no mock needed).
+# This is the contrast with LLM agents: plain code gets plain, exact tests.
+# ---------------------------------------------------------------------------
+class TestFlakeHandler:
+    def _handler(self, tmp_path, threshold=3):
+        from diagnostician.agents.flake_handler.agent import FlakeHandler
+        return FlakeHandler(threshold=threshold, store_path=tmp_path / "flakes.json")
+
+    def test_tracks_below_threshold(self, tmp_path):
+        h = self._handler(tmp_path, threshold=3)
+        r1 = h.handle("test_a")
+        assert r1.action == "track"
+        assert r1.flake_count == 1
+        assert r1.quarantined is False
+
+    def test_quarantines_at_threshold(self, tmp_path):
+        h = self._handler(tmp_path, threshold=3)
+        h.handle("test_b")
+        h.handle("test_b")
+        r3 = h.handle("test_b")           # 3rd flake hits threshold
+        assert r3.action == "quarantine"
+        assert r3.quarantined is True
+        assert r3.flake_count == 3
+
+    def test_counts_are_per_test(self, tmp_path):
+        h = self._handler(tmp_path, threshold=3)
+        h.handle("test_a")
+        r = h.handle("test_b")
+        assert r.flake_count == 1          # test_b independent of test_a
+
+    def test_persists_across_instances(self, tmp_path):
+        store = tmp_path / "flakes.json"
+        from diagnostician.agents.flake_handler.agent import FlakeHandler
+        h1 = FlakeHandler(threshold=3, store_path=store)
+        h1.handle("test_c")
+        h1.handle("test_c")
+        # New instance reading the same store should continue the count.
+        h2 = FlakeHandler(threshold=3, store_path=store)
+        r = h2.handle("test_c")
+        assert r.flake_count == 3
+        assert r.quarantined is True
