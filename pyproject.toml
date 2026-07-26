@@ -12,6 +12,7 @@ dependencies = [
     "anthropic>=0.40",
     "openai>=1.50",
     "python-dotenv>=1.0",
+    "langgraph>=1.2.9",
 ]
 
 # Optional dev dependencies — only needed to TEST/develop, not to run.
@@ -24,6 +25,7 @@ dev = [
 # A convenient CLI entry point:  `uv run diagnose-eval --provider anthropic`
 [project.scripts]
 diagnose-eval = "diagnostician.evaluate:main"
+diagnose-crew = "diagnostician.crew:main"
 
 [build-system]
 requires = ["hatchling"]
