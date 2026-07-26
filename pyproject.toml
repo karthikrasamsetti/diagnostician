@@ -25,7 +25,7 @@ dev = [
 # A convenient CLI entry point:  `uv run diagnose-eval --provider anthropic`
 [project.scripts]
 diagnose-eval = "diagnostician.evaluate:main"
-diagnose-crew = "diagnostician.crew:main"
+diagnose-crew = "diagnostician.crew.graph:main"
 
 [build-system]
 requires = ["hatchling"]

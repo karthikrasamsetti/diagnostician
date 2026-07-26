@@ -22,15 +22,14 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import statistics
 from collections import defaultdict
 
-from diagnostician.schema import Verdict, Action
-from diagnostician.agent import Diagnostician
-from diagnostician.providers import get_provider
-from diagnostician.fixtures import FIXTURES, Fixture
-from diagnostician import config  # importing this loads .env
+from diagnostician.core.schema import Verdict, Action
+from diagnostician.agents.diagnostician.agent import Diagnostician
+from diagnostician.core.providers import get_provider
+from diagnostician.agents.diagnostician.fixtures import FIXTURES, Fixture
+from diagnostician.core import config  # importing this loads .env
 
 logger = logging.getLogger("diagnostician.evaluate")
 
@@ -123,13 +122,11 @@ def main() -> None:
     logging.basicConfig(level=logging.WARNING,  # keep INFO noise down during eval
                         format="%(levelname)s | %(message)s")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", default=None,
-                        help="mock | anthropic | openai (default: read LLM_PROVIDER from .env)")
+    parser.add_argument("--provider", default="mock",
+                        help="mock | anthropic | openai")
     args = parser.parse_args()
-    # CLI flag wins if given; otherwise fall back to .env's LLM_PROVIDER, then 'mock'
-    provider = args.provider or os.getenv("LLM_PROVIDER") or "mock"
-    config.require_key_for(provider)
-    run_evaluation(provider)
+    config.require_key_for(args.provider)  # fail early & clearly if key missing
+    run_evaluation(args.provider)
 
 
 if __name__ == "__main__":

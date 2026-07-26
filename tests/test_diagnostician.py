@@ -19,13 +19,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from diagnostician.schema import Verdict, Label, Action
-from diagnostician.providers import (
+from diagnostician.core.schema import Verdict, Label, Action
+from diagnostician.core.providers import (
     get_provider, MockProvider, LLMProvider, AnthropicProvider, OpenAIProvider,
 )
-from diagnostician.agent import Diagnostician
-from diagnostician.prompt import build_user_message, SYSTEM_PROMPT
-from diagnostician.fixtures import FIXTURES
+from diagnostician.agents.diagnostician.agent import Diagnostician
+from diagnostician.agents.diagnostician.prompt import build_user_message, SYSTEM_PROMPT
+from diagnostician.agents.diagnostician.fixtures import FIXTURES
 from diagnostician.evaluate import is_correct
 
 
@@ -68,7 +68,7 @@ class TestFactory:
     def test_all_providers_are_llmproviders(self):
         # We can construct the classes without keys? No — anthropic/openai read
         # keys at init. So we only assert the registry maps to the right TYPES.
-        from diagnostician.providers import _REGISTRY
+        from diagnostician.core.providers import _REGISTRY
         assert _REGISTRY["mock"] is MockProvider
         assert _REGISTRY["anthropic"] is AnthropicProvider
         assert _REGISTRY["openai"] is OpenAIProvider

@@ -21,7 +21,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 
-from diagnostician.schema import Verdict
+from diagnostician.core.schema import Verdict
 
 logger = logging.getLogger("diagnostician.providers")
 

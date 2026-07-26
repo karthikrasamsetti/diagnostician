@@ -23,9 +23,9 @@ from __future__ import annotations
 import logging
 import time
 
-from diagnostician.schema import Verdict, Label, Action
-from diagnostician.prompt import SYSTEM_PROMPT, build_user_message
-from diagnostician.providers import LLMProvider, get_provider
+from diagnostician.core.schema import Verdict, Label, Action
+from diagnostician.agents.diagnostician.prompt import SYSTEM_PROMPT, build_user_message
+from diagnostician.core.providers import LLMProvider, get_provider
 
 logger = logging.getLogger("diagnostician.agent")
 

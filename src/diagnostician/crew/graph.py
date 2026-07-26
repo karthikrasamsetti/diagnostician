@@ -26,10 +26,10 @@ import logging
 
 from langgraph.graph import StateGraph, START, END
 
-from diagnostician.crew_state import CrewState
-from diagnostician.agent import Diagnostician
-from diagnostician.providers import get_provider, LLMProvider
-from diagnostician.schema import Action
+from diagnostician.crew.state import CrewState
+from diagnostician.agents.diagnostician.agent import Diagnostician
+from diagnostician.core.providers import get_provider, LLMProvider
+from diagnostician.core.schema import Action
 
 logger = logging.getLogger("diagnostician.crew")
 
@@ -160,8 +160,8 @@ def main() -> None:
     """CLI entry point. Exposed as `diagnose-crew` via pyproject.toml scripts."""
     import argparse
     import os
-    from diagnostician import config  # loads .env
-    from diagnostician.fixtures import FIXTURES
+    from diagnostician.core import config  # loads .env
+    from diagnostician.agents.diagnostician.fixtures import FIXTURES
 
     logging.basicConfig(level=logging.INFO,
                         format="%(levelname)s | %(name)s | %(message)s")
