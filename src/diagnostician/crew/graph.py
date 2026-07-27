@@ -53,12 +53,28 @@ def make_diagnostician_node(provider: LLMProvider):
 
 
 # --- STUB action nodes. Hollow on purpose; they just record what they WOULD do.
-def healer_node(state: CrewState) -> dict:
-    v = state["verdict"]
-    note = (f"[Healer stub] Would rewrite the stale locator for a broken_test. "
-            f"Reasoning: {v.reasoning[:80]}...")
-    logger.info("Healer stub ran")
-    return {"heal_result": note, "route": "healer", "status": "done"}
+def make_healer_node(provider: LLMProvider):
+    """Factory: injects the provider into the real Healer agent."""
+    from diagnostician.agents.healer.agent import Healer
+    healer = Healer(provider=provider)
+
+    def healer_node(state: CrewState) -> dict:
+        proposal = healer.propose(state["case_file"], state["verdict"])
+        if proposal.escalate:
+            summary = (f"Healer ESCALATED: could not safely determine a fix for "
+                       f"'{proposal.old_locator}'. Human must update the locator. "
+                       f"(No guess made — safer than a wrong locator.)")
+            status = "awaiting_human"
+        else:
+            summary = (f"Healer PROPOSED: {proposal.old_locator} -> {proposal.new_locator} "
+                       f"(confidence {proposal.confidence:.2f}). DRAFT ONLY — needs human "
+                       f"approval before applying.")
+            status = "awaiting_approval"
+        logger.info("Healer: %s", "escalated" if proposal.escalate else "proposed a fix")
+        return {"heal_result": summary, "heal_proposal": proposal,
+                "route": "healer", "status": status}
+
+    return healer_node
 
 
 def make_flake_handler_node():
@@ -134,7 +150,7 @@ def build_crew(provider: LLMProvider | None = None):
 
     # Register nodes (name -> function).
     graph.add_node("diagnostician", make_diagnostician_node(provider))
-    graph.add_node("healer", healer_node)
+    graph.add_node("healer", make_healer_node(provider))
     graph.add_node("flake_handler", make_flake_handler_node())
     graph.add_node("reporter", make_reporter_node(provider))
     graph.add_node("human_review", human_review_node)

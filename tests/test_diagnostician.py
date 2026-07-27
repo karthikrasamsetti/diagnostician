@@ -227,3 +227,31 @@ class TestFlakeHandler:
         r = h2.handle("test_c")
         assert r.flake_count == 3
         assert r.quarantined is True
+
+
+# ---------------------------------------------------------------------------
+# HEALER — the safety invariant: an escalation must NEVER carry a locator guess.
+# ---------------------------------------------------------------------------
+class TestHealerSafety:
+    def test_escalation_carries_no_locator(self):
+        from diagnostician.agents.healer.schema import HealProposal
+        # Even if a model tried to sneak a locator into an escalation, the agent
+        # strips it. Here we assert the schema+agent invariant directly.
+        from diagnostician.core.providers import MockProvider
+        from diagnostician.agents.healer.agent import Healer
+        from diagnostician.core.schema import Verdict
+        h = Healer(provider=MockProvider())  # mock escalates by default
+        v = Verdict(label="broken_test", confidence=0.9,
+                    reasoning="x"*20, recommended_action="heal_locator")
+        p = h.propose({"test_name": "t", "error_message": "0 elements for '#x'"}, v)
+        if p.escalate:
+            assert p.new_locator is None       # the core safety guarantee
+        assert p.requires_approval is True     # always human-gated
+
+    def test_requires_approval_is_always_true(self):
+        from diagnostician.agents.healer.schema import HealProposal
+        p = HealProposal(old_locator="#a", escalate=False, confidence=0.9,
+                         reasoning="grounded fix from diff evidence here",
+                         new_locator="#b", locator_strategy="id",
+                         grounded_in="diff renamed #a->#b", uniqueness_note="id unique")
+        assert p.requires_approval is True

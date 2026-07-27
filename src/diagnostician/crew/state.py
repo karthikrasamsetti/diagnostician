@@ -24,6 +24,7 @@ from typing import Optional, TypedDict
 
 from diagnostician.core.schema import Verdict
 from diagnostician.agents.reporter.schema import TicketDraft
+from diagnostician.agents.healer.schema import HealProposal
 
 
 class CrewState(TypedDict, total=False):
@@ -34,7 +35,8 @@ class CrewState(TypedDict, total=False):
     verdict: Verdict           # label + confidence + reasoning + recommended_action
 
     # --- Added by exactly ONE downstream node, depending on the verdict ---
-    heal_result: Optional[str]     # Healer: proposed locator fix (broken_test)
+    heal_result: Optional[str]     # Healer: human-readable summary
+    heal_proposal: Optional[HealProposal]  # Healer: the full structured proposal
     flake_result: Optional[str]    # FlakeHandler: quarantine/track note (flaky)
     report_result: Optional[str]      # Reporter: human-readable summary line
     ticket_draft: Optional[TicketDraft]  # Reporter: the full structured draft

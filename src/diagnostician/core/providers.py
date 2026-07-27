@@ -150,7 +150,9 @@ def _minimal_instance(schema: Type[T]) -> T:
         if field.default is not PydanticUndefined or field.default_factory is not None:
             continue  # optional / has default -> let Pydantic fill it
         ann = field.annotation
-        if ann is str:
+        if ann is bool:
+            values[name] = True
+        elif ann is str:
             values[name] = f"[mock {name}]".ljust(30, ".")
         elif ann is float:
             values[name] = 0.5
