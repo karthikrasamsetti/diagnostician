@@ -28,6 +28,8 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from pathlib import Path
 from pydantic import BaseModel
 
 from diagnostician.core import config  # loads .env
@@ -165,8 +167,20 @@ def record_decision(run_id: str, req: DecisionRequest) -> dict:
     return run
 
 
-@app.get("/")
-def root() -> dict:
+_WEB_DIR = Path(__file__).parent / "web"
+
+
+@app.get("/", response_class=HTMLResponse)
+def home() -> str:
+    """Serve the triage console UI."""
+    index = _WEB_DIR / "index.html"
+    if index.exists():
+        return index.read_text()
+    return "<h1>Diagnostician API</h1><p>UI not found; see /docs for the API.</p>"
+
+
+@app.get("/api")
+def api_info() -> dict:
     return {"service": "Diagnostician Crew API", "runs_this_session": len(_RUNS)}
 
 

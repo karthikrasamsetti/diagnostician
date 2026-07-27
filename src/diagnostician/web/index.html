@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnostician — Triage Console</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a212b;
+    --panel-2: #212a36;
+    --line: #2c3744;
+    --ink: #e6edf3;
+    --ink-dim: #8b98a5;
+    --ink-faint: #5b6773;
+    --bug: #f87171;         /* application_bug */
+    --broken: #fbbf24;      /* broken_test */
+    --flaky: #a78bfa;       /* flaky */
+    --env: #38bdf8;         /* environment_issue */
+    --ok: #34d399;
+    --accent: #7dd3fc;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 28px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; font-weight: 650; }
+  h1 .dot { color: var(--accent); }
+  .sub { color: var(--ink-dim); font-size: 13px; margin-top: 4px; }
+  .sub code { font-family: var(--mono); color: var(--ink-faint); }
+
+  .controls {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px; margin-bottom: 24px;
+  }
+  label { font-size: 12px; color: var(--ink-dim); display: block; margin-bottom: 5px; }
+  select, button {
+    font-family: var(--sans); font-size: 14px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+    padding: 9px 12px;
+  }
+  select { min-width: 220px; }
+  .field { flex: 1; min-width: 200px; }
+  button.run {
+    background: var(--accent); color: #04121c; border: none; font-weight: 600;
+    cursor: pointer; padding: 9px 18px; align-self: end;
+  }
+  button.run:disabled { opacity: 0.5; cursor: default; }
+  button.run:not(:disabled):hover { filter: brightness(1.08); }
+
+  .status { color: var(--ink-dim); font-size: 13px; min-height: 18px; margin-bottom: 16px; }
+  .status.err { color: var(--bug); }
+
+  /* verdict card */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+          overflow: hidden; margin-bottom: 18px; }
+  .card.hidden { display: none; }
+  .verdict-head { padding: 18px 20px; display: flex; align-items: center; gap: 16px;
+                  border-bottom: 1px solid var(--line); }
+  .label-chip {
+    font-family: var(--mono); font-size: 13px; font-weight: 600;
+    padding: 6px 12px; border-radius: 6px; white-space: nowrap;
+    border: 1px solid currentColor;
+  }
+  .c-application_bug { color: var(--bug); }
+  .c-broken_test { color: var(--broken); }
+  .c-flaky { color: var(--flaky); }
+  .c-environment_issue { color: var(--env); }
+
+  .conf { flex: 1; }
+  .conf-bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .conf-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .5s ease; }
+  .conf-num { font-family: var(--mono); font-size: 13px; color: var(--ink-dim); }
+  .route-pill {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-dim);
+    border: 1px dashed var(--line); border-radius: 20px; padding: 5px 12px;
+  }
+  .route-pill b { color: var(--ink); }
+
+  .section { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .section:last-child { border-bottom: none; }
+  .section h3 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase;
+                letter-spacing: 0.08em; color: var(--ink-faint); }
+  .reasoning { font-size: 13.5px; color: var(--ink); white-space: pre-wrap; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 14px; font-size: 13.5px; }
+  .kv dt { color: var(--ink-dim); }
+  .kv dd { margin: 0; font-family: var(--mono); }
+  .locator-old { color: var(--bug); text-decoration: line-through; }
+  .locator-new { color: var(--ok); }
+  ul.obs { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; }
+  ul.obs li { margin-bottom: 4px; }
+
+  /* the approval gate */
+  .gate { background: var(--panel-2); }
+  .gate .banner { font-size: 13px; color: var(--broken); margin-bottom: 12px; }
+  .gate .banner.escalate { color: var(--env); }
+  .gate-actions { display: flex; gap: 10px; }
+  button.approve { background: var(--ok); color: #04211a; border: none; font-weight: 600;
+                   cursor: pointer; padding: 9px 18px; border-radius: 7px; }
+  button.reject { background: transparent; color: var(--bug); border: 1px solid var(--bug);
+                  cursor: pointer; padding: 9px 18px; border-radius: 7px; }
+  button.approve:hover { filter: brightness(1.08); }
+  button.reject:hover { background: rgba(248,113,113,0.1); }
+  .decided { font-family: var(--mono); font-size: 13px; padding: 10px 14px;
+             border-radius: 7px; background: var(--panel); border: 1px solid var(--line); }
+  .decided.approve { color: var(--ok); }
+  .decided.reject { color: var(--bug); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Diagnostician <span class="dot">●</span> Triage Console</h1>
+    <div class="sub">Pick a failed test, run the crew, review the verdict and proposed action.
+      Actions that touch code are <code>draft-only</code> until you approve.</div>
+  </header>
+
+  <div class="controls">
+    <div class="field">
+      <label for="fixture">Failed test</label>
+      <select id="fixture"></select>
+    </div>
+    <div class="field" style="max-width:160px">
+      <label for="provider">Model</label>
+      <select id="provider">
+        <option value="">(from .env)</option>
+        <option value="anthropic">anthropic</option>
+        <option value="openai">openai</option>
+        <option value="mock">mock (offline)</option>
+      </select>
+    </div>
+    <button class="run" id="runBtn" onclick="runTriage()">Run triage</button>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div class="card hidden" id="result"></div>
+</div>
+
+<script>
+const API = "http://127.0.0.1:8000";
+let currentRunId = null;
+
+const LABELS = {
+  application_bug: "APPLICATION BUG",
+  broken_test: "BROKEN TEST",
+  flaky: "FLAKY",
+  environment_issue: "ENVIRONMENT ISSUE",
+};
+
+async function loadFixtures() {
+  try {
+    const res = await fetch(`${API}/fixtures`);
+    const fixtures = await res.json();
+    const sel = document.getElementById("fixture");
+    sel.innerHTML = fixtures.map(f =>
+      `<option value="${f.id}">${f.test_name} — expects ${f.expected_label}${f.trap ? " ⚠ trap" : ""}</option>`
+    ).join("");
+  } catch (e) {
+    setStatus(`Could not reach the API at ${API}. Is it running? (uv run diagnose-api)`, true);
+  }
+}
+
+function setStatus(msg, isErr=false) {
+  const s = document.getElementById("status");
+  s.textContent = msg;
+  s.className = "status" + (isErr ? " err" : "");
+}
+
+async function runTriage() {
+  const fixtureId = document.getElementById("fixture").value;
+  const provider = document.getElementById("provider").value;
+  const btn = document.getElementById("runBtn");
+  btn.disabled = true;
+  setStatus("Running the crew… (a real model can take a few seconds)");
+  document.getElementById("result").className = "card hidden";
+
+  try {
+    const res = await fetch(`${API}/triage`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({fixture_id: fixtureId, provider: provider || null}),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || res.statusText);
+    }
+    const run = await res.json();
+    currentRunId = run.id;
+    render(run);
+    setStatus(`Run ${run.id} · ${run.provider}`);
+  } catch (e) {
+    setStatus(e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function render(run) {
+  const r = run.result;
+  const v = r.verdict;
+  const label = v.label;
+  const conf = Math.round(v.confidence * 100);
+
+  let html = `
+    <div class="verdict-head">
+      <span class="label-chip c-${label}">${LABELS[label] || label}</span>
+      <div class="conf">
+        <div class="conf-num">confidence ${conf}%</div>
+        <div class="conf-bar"><div class="conf-fill" style="width:${conf}%"></div></div>
+      </div>
+      <span class="route-pill">routed to <b>${r.route}</b></span>
+    </div>
+    <div class="section">
+      <h3>Why</h3>
+      <div class="reasoning">${escapeHtml(v.reasoning)}</div>
+    </div>`;
+
+  // Action section depends on which node ran.
+  if (r.heal_proposal) html += renderHeal(r.heal_proposal);
+  else if (r.ticket_draft) html += renderTicket(r.ticket_draft);
+  else if (r.flake_result) html += `<div class="section"><h3>Flake handling</h3>
+      <div class="reasoning">${escapeHtml(r.flake_result)}</div></div>`;
+  else if (r.human_note) html += `<div class="section"><h3>Escalation</h3>
+      <div class="reasoning">${escapeHtml(r.human_note)}</div></div>`;
+
+  // Approval gate.
+  if (run.needs_approval) html += renderGate(run);
+
+  const card = document.getElementById("result");
+  card.innerHTML = html;
+  card.className = "card";
+}
+
+function renderHeal(h) {
+  if (h.escalate) {
+    return `<div class="section"><h3>Proposed fix</h3>
+      <div class="reasoning">Healer escalated — it could not safely determine a fix and did
+      <b>not</b> guess a locator. ${escapeHtml(h.reasoning)}</div>
+      ${h.observations && h.observations.length ? `<ul class="obs">${
+        h.observations.map(o=>`<li>${escapeHtml(o)}</li>`).join("")}</ul>` : ""}
+      </div>`;
+  }
+  return `<div class="section"><h3>Proposed locator fix</h3>
+    <dl class="kv">
+      <dt>replace</dt><dd class="locator-old">${escapeHtml(h.old_locator)}</dd>
+      <dt>with</dt><dd class="locator-new">${escapeHtml(h.new_locator)}</dd>
+      <dt>strategy</dt><dd>${escapeHtml(h.locator_strategy || "")}</dd>
+      <dt>grounded in</dt><dd style="font-family:var(--sans)">${escapeHtml(h.grounded_in || "")}</dd>
+      <dt>unique?</dt><dd style="font-family:var(--sans)">${escapeHtml(h.uniqueness_note || "")}</dd>
+    </dl></div>`;
+}
+
+function renderTicket(t) {
+  return `<div class="section"><h3>Drafted ticket</h3>
+    <dl class="kv">
+      <dt>summary</dt><dd style="font-family:var(--sans)">${escapeHtml(t.summary)}</dd>
+      <dt>priority</dt><dd>${escapeHtml(t.priority)}</dd>
+      <dt>expected</dt><dd style="font-family:var(--sans)">${escapeHtml(t.expected_result)}</dd>
+      <dt>actual</dt><dd style="font-family:var(--sans)">${escapeHtml(t.actual_result)}</dd>
+    </dl>
+    ${t.needs_human_input && t.needs_human_input.length ? `<h3 style="margin-top:14px">Needs human input</h3>
+      <ul class="obs">${t.needs_human_input.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul>` : ""}
+    </div>`;
+}
+
+function renderGate(run) {
+  if (run.decision) {
+    const d = run.decision;
+    return `<div class="section gate">
+      <div class="decided ${d.decision}">✓ ${d.decision.toUpperCase()}${d.note ? " — " + escapeHtml(d.note) : ""}</div>
+    </div>`;
+  }
+  const isEscalate = run.result.status === "awaiting_human";
+  return `<div class="section gate">
+    <div class="banner ${isEscalate ? "escalate" : ""}">
+      ${isEscalate
+        ? "This needs a human decision — no automatic action will be taken."
+        : "This action is a draft. Approve to accept it, or reject to discard. Nothing is applied automatically."}
+    </div>
+    <div class="gate-actions">
+      <button class="approve" onclick="decide('approve')">Approve</button>
+      <button class="reject" onclick="decide('reject')">Reject</button>
+    </div>
+  </div>`;
+}
+
+async function decide(decision) {
+  if (!currentRunId) return;
+  setStatus(`Recording ${decision}…`);
+  try {
+    const res = await fetch(`${API}/runs/${currentRunId}/decision`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({decision, note: decision === "approve" ? "Approved via console" : "Rejected via console"}),
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || res.statusText); }
+    const run = await res.json();
+    render(run);
+    setStatus(`Run ${run.id} · decision recorded: ${decision}`);
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+loadFixtures();
+</script>
+</body>
+</html>
